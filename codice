@@ -1,0 +1,520 @@
+//
+//  ViewController.swift
+//  HapticTime
+//
+//  Created by Lorenzo Giannantonio on 29/08/2020.
+//  Copyright © 2020 Lorenzo Giannantonio. All rights reserved.
+//
+
+import UIKit
+import CoreMotion
+import CoreHaptics
+import UserNotifications
+import AVFoundation
+var engineready = false
+let motionManager = CMMotionManager()
+var inclination = Float(0)
+var position = Float(0)
+var directionmin = true
+var predirectionmin = true
+var direction = true
+var predirection = false
+var preinclination = Float(0)
+var vibrating : Bool = false
+var contintensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0)
+var contsharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0)
+var player : CHHapticAdvancedPatternPlayer!
+var engine: CHHapticEngine!
+var previbr : Float = 0
+var prehour = 0
+var hourint = 0
+var intensityforalarm = Float(0.2)
+var hourtoalarm = 0
+var minutetoalarm = 0
+var alertpermitted = false
+var actualhour = 0
+var btimer : Timer!
+var atimer : Timer!
+var dateTimeComponents : DateComponents!
+var updatetime = true
+var supportHaptics = false
+var alarmset = false
+var newSize : CGSize!
+var exitalarmsetting = false
+var hour = Float(0)
+var pm = false
+class ViewController: UIViewController, UINavigationControllerDelegate {
+    var acc = UIView()
+    //var defaultsound : UNNotificationSound?
+    @objc func swipe() {
+        print("1")
+        activehands = false
+        if atimer != nil{if atimer.isValid {atimer.invalidate()}}
+        if alertpermitted && alarmset{
+            print("2")
+            DispatchQueue.main.async{
+                let center = UNUserNotificationCenter.current()
+                center.getNotificationSettings { settings in
+                    guard (settings.authorizationStatus == .authorized) ||
+                          (settings.authorizationStatus == .provisional) else { return }
+                    center.removeAllPendingNotificationRequests();center.removeAllDeliveredNotifications()
+            }
+            self.labelalarm.text = ""
+            alarmset = false
+            }
+            activehands = false
+        }
+    }
+    var stringofalarm = ""
+    let baseuiimage = UIImage(named: "sagomacellulare.png")!
+    var activehands = false
+    let sfondoorologio = UIImageView()
+    let lancetta = UIImageView()
+    let requestedComponents: Set<Calendar.Component> = [
+        .hour,
+        .minute,
+        .second
+    ]
+    let labelalarm = UILabel()
+    let label = UILabel()
+    var waitend = false
+    func createAndStartHapticEngine() -> Bool{
+        do {engine = try CHHapticEngine()
+            
+        } catch {
+            print("errorcreatinghaptic")
+            return false
+            }
+        
+        do {try engine?.start()
+            engineready = true
+        } catch {
+            return false
+        }
+     
+        return true
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        self.createAndStartHapticEngine()
+        //defaultsound  = try? UNNotificationSound(named: UNNotificationSoundName(rawValue: ""))
+        let frameref = view.frame
+                     let ray = acc.frame.width * 0.35
+                     sfondoorologio.frame = CGRect(x: frameref.width * 0.15, y: frameref.height*0.5 - ray, width: ray*2, height: ray*2)
+                     sfondoorologio.image = UIImage(named: "sfondoorologio.png")
+        lancetta.frame = CGRect(x: frameref.width*0.5 - ray*0.6, y: frameref.height*0.5 - ray*0.6, width: ray*1.2, height: ray*1.2)
+        newSize = CGSize(width: ray*1.2, height: ray*1.2)
+                     
+                     label.frame = CGRect(x: 0, y: frameref.height*0.7, width: frameref.width, height: frameref.height*0.25)
+                     label.adjustsFontSizeToFitWidth = true
+                     label.textAlignment = .center
+                     label.textColor = UIColor(displayP3Red: 0.2, green: 0, blue: 0, alpha: 1)
+                     label.font = UIFont(name: "Futura-CondensedExtraBold", size: acc.frame.width / 6)
+                     
+                     labelalarm.frame = CGRect(x: 0, y: frameref.height*0.1, width: frameref.width, height: frameref.height*0.25)
+                     labelalarm.adjustsFontSizeToFitWidth = true
+                     labelalarm.textAlignment = .center
+                     labelalarm.textColor = UIColor(displayP3Red: 0.2, green: 0, blue: 0, alpha: 1)
+                     labelalarm.font = UIFont(name: "Futura-CondensedExtraBold", size: frameref.width / 8)
+                    
+               
+               DispatchQueue.main.async{dateTimeComponents = Calendar.current.dateComponents(self.requestedComponents, from: Date());
+               if let hour = dateTimeComponents.hour {
+                   var hours = hour
+                if hours > 12 {hours -= 12;pm = true}
+                var corr = 0;if pm {corr = 12}
+                   self.label.text = String("0" + String(Int(hours + corr))).suffix(2) + ":" + String("0" + String(dateTimeComponents.minute ?? 0)).suffix(2);
+                   updatetime = false} else {updatetime = true}
+                    let center = UNUserNotificationCenter.current()
+                    center.requestAuthorization(options: [.sound]) { granted, error in
+                        if error != nil {
+                            alertpermitted = false
+                            print("alertnopermitted")
+                        } else {
+                            alertpermitted = granted
+                            self.loadtimerset()
+                            print("alertpermitted")
+                        }
+                    }
+              
+                
+                    let a = self.motionman();if a {
+                                 btimer = Timer.scheduledTimer(timeInterval: TimeInterval(10), target: self, selector: #selector(self.uptime), userInfo: nil, repeats: true)
+                                 };
+        }
+                     
+        
+}
+    @objc func uptime(){
+        updatetime = true
+        }
+    
+    func checkengine(){
+        engine.stoppedHandler = { reason in
+            print("Stop Handler: The engine stopped for reason: \(reason.rawValue)")
+            switch reason {
+            case .audioSessionInterrupt: print("Audio session interrupt")
+            case .applicationSuspended: print("Application suspended")
+            case .idleTimeout: print("Idle timeout")
+            case .systemError: print("System error")
+            case .notifyWhenFinished: print("Playback finished")
+            default:
+                print("Unknown error")
+            }
+        }
+        
+        // The reset handler provides an opportunity to restart the engine.
+        engine.resetHandler = {
+            
+            print("Reset Handler: Restarting the engine.")
+            
+            do {
+                // Try restarting the engine.
+                try engine.start()
+                
+                // Indicate that the next time the app requires a haptic, the app doesn't need to call engine.start().
+                
+            } catch {
+                print("Failed to start the engine")
+            }
+        }
+    }
+    
+    
+    var permitscreentouch = true
+    var screentouched = false {didSet{
+        if !screentouched {
+            minutetoalarm = Int(inclination*5)
+            setalarm()
+        }}}
+    var overhour = true{didSet{
+        if direction != predirection && !screentouched{
+            predirection = direction
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        }}}
+    var overminute = true{didSet{
+        if directionmin != predirectionmin && !screentouched{
+            predirectionmin = directionmin
+            let generator = UIImpactFeedbackGenerator();
+            generator.impactOccurred(intensity: 0.7);
+        }}}
+    
+    func loadtimerset() {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            guard (settings.authorizationStatus == .authorized) ||
+                    (settings.authorizationStatus == .provisional) else {
+        center.removeAllDeliveredNotifications()
+        self.labelalarm.text = ""
+        alarmset = false
+                return }}
+        
+            center.getPendingNotificationRequests(completionHandler: { requests in
+                for request in requests {
+                    alarmset = true
+                    let req = request.trigger?.value(forKey: "dateComponents")
+                    if let h = req as? DateComponents {
+                        hourtoalarm = h.hour ?? 0
+                        minutetoalarm = h.minute ?? 0
+                        self.stringofalarm = String("0" + String(hourtoalarm)).suffix(2) + ":" + String("0" + String(minutetoalarm)).suffix(2)
+                        alarmset = true;
+                        DispatchQueue.main.async{self.labelalarm.text = self.stringofalarm}
+                    }
+                }
+            })
+    }
+    
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        //self.view.isUserInteractionEnabled = false
+        let defaults = UserDefaults.standard
+        do {try NSKeyedArchiver.archivedData(withRootObject: ("") as String, requiringSecureCoding: false)
+        defaults.removeObject(forKey: "HapticTimeAlarm")} catch {print("not deleted")}
+        acc.frame = self.view.frame
+        acc.isAccessibilityElement = true
+        acc.accessibilityTraits = .allowsDirectInteraction
+        view.backgroundColor = .black
+        let SwipeuptGesture = UISwipeGestureRecognizer(target:self,action:#selector(swipe))
+        SwipeuptGesture.direction = .up
+        SwipeuptGesture.cancelsTouchesInView = true
+        let SwieuptGesture = UISwipeGestureRecognizer(target:self,action:#selector(swipe))
+        SwieuptGesture.direction = .down
+        SwieuptGesture.cancelsTouchesInView = true
+        let SwipeuptGeture = UISwipeGestureRecognizer(target:self,action:#selector(swipe))
+        SwipeuptGeture.direction = .right
+        SwipeuptGeture.cancelsTouchesInView = true
+        let SwipeuptGestur = UISwipeGestureRecognizer(target:self,action:#selector(swipe))
+        SwipeuptGestur.direction = .left
+        SwipeuptGestur.cancelsTouchesInView = true
+        self.acc.isUserInteractionEnabled = true
+        self.acc.backgroundColor = .clear
+        self.acc.addSubview(self.sfondoorologio)
+        self.acc.addSubview(self.lancetta)
+        self.acc.addSubview(label)
+        self.acc.addSubview(labelalarm)
+        self.acc.addGestureRecognizer(SwipeuptGesture)
+        self.acc.addGestureRecognizer(SwieuptGesture)
+        self.acc.addGestureRecognizer(SwipeuptGeture)
+        self.acc.addGestureRecognizer(SwipeuptGestur)
+        self.view.addSubview(self.acc)
+    }
+    
+
+    
+    override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?){
+        if motion == .motionShake {
+        if alertpermitted && alarmset{
+            DispatchQueue.main.async{let center = UNUserNotificationCenter.current()
+            center.removeAllDeliveredNotifications();center.removeAllDeliveredNotifications()}
+            self.labelalarm.text = ""
+            alarmset = false
+            }
+        }
+        }
+    
+    func motionman() -> Bool{
+        var valuetoreturn : Bool?
+        if motionManager.isDeviceMotionAvailable && !motionManager.isDeviceMotionActive{
+                 motionManager.deviceMotionUpdateInterval = 1.0 / 25
+                    motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { (data, error)
+                        in if data != nil && error == nil{
+                        preinclination = inclination
+                            if let attituderoll = motionManager.deviceMotion?.attitude.roll {
+                            inclination = -abs(-(Float(attituderoll))/(.pi)*12 + 12)/2 + 6
+                            if inclination < 0 {inclination = (12 + inclination)}
+                                self.lancetta.image = self.baseuiimage.rotate(radians: ((inclination+6)/6) * .pi)
+                            if updatetime {dateTimeComponents = Calendar.current.dateComponents(self.requestedComponents, from: Date())}
+                            hour = Float(dateTimeComponents.hour!) + Float(dateTimeComponents.minute!)/60
+                            actualhour = Int(hour)
+                                if Int(hour) > 12 {pm = true} else {pm = false}
+                                if hour > 12 {hour -= 12}
+                            let minuteto12 = Float(dateTimeComponents.minute!)/5
+                         //   if activehands && alarmset{let text = String(self.labelalarm.text ?? "");if text.count != 0 {let minuteto100 = Float(Int(String(text.suffix(2)))!)*1.667;hour = Float(Int(String(text.prefix(2)))!) + Float(minuteto100)/100; minuteto12 = minuteto100*0.6667;
+                         //       if !resetcycle {resetcycle = true}
+                          //      }}
+                            if alarmset && self.activehands{
+                                let generatorh = UINotificationFeedbackGenerator()
+                                let generatorm = UIImpactFeedbackGenerator()
+                                if hourtoalarm > 12 {hourtoalarm -= 12}
+                                let floathour = Float(hourtoalarm) + Float(minutetoalarm)/60
+                                let distancefrom12 = (12 - inclination) + (12 - preinclination)
+                                let distancefromhour = ((max(inclination,floathour) - min(inclination,floathour)) + (max(preinclination,floathour) - min(preinclination,floathour)))
+                                //print(hourtoalarm,preinclination,inclination)
+                                if (((preinclination < floathour && inclination > floathour) || (preinclination > floathour && inclination < floathour)) && (abs(distancefrom12 - distancefromhour) > abs(floathour - inclination))) || (hourtoalarm == 12 && abs(preinclination-inclination) > 5)  {generatorh.notificationOccurred(.success)}
+                                let floatminute = Float(minutetoalarm)/5
+                                let distancefromminute = max(inclination,floatminute) - min(inclination,floatminute)
+                                if (((preinclination < floatminute && inclination > floatminute) || (preinclination > floatminute && inclination < floatminute)) && (abs(distancefrom12 - distancefromminute) > abs(floatminute - inclination))) || (minutetoalarm == 0 && abs(preinclination-inclination) > 5){generatorm.impactOccurred(intensity: 0.7)}
+                            }
+                            let distancehour1 = inclination - hour
+                            let distancehour2 = hour - inclination
+                            let distanceminute1 = inclination - minuteto12
+                            let distanceminute2 = minuteto12 - inclination
+                            var difference = (max(distancehour1,distancehour2) - distancehour1) - (max(distancehour1,distancehour2) - distancehour2)
+                            var differenceminute = (max(distanceminute1,distanceminute2) - distanceminute1) - (max(distanceminute1,distanceminute2) - distanceminute2)
+                            if difference > 12 {difference -= 24;direction.toggle()}
+                            if difference < -12 {difference += 24;direction.toggle()}
+                            if differenceminute > 12 {differenceminute -= 24;directionmin.toggle()}
+                            if differenceminute < -12 {differenceminute += 24;directionmin.toggle()}
+                            if self.screentouched || self.activehands{
+                                if self.screentouched && !alarmset {self.vibradepthrt(vibr: min(1,intensityforalarm))}
+                                if self.waitend{intensityforalarm = intensityforalarm*1.05;if intensityforalarm > 1.2 || exitalarmsetting {self.waitend = false;self.end()}}
+                                prehour = hourint
+                                hourint = Int(inclination)
+                                if prehour != hourint {let generator = UIImpactFeedbackGenerator();generator.impactOccurred(intensity: 0.3)}
+                                } else {
+                              //  if !resetcycle {
+                                if difference > 0 && difference < 3 && !direction {direction = true;self.overhour = false} else if difference < 0 && difference > -3 && direction {direction = false;self.overhour = true}
+                                if differenceminute > 0 && differenceminute < 3 && !directionmin {directionmin = true;self.overminute = false} else if differenceminute < 0 && differenceminute > -3 && directionmin {directionmin = false;self.overminute = true}
+                            //    } else {resetcycle = false}
+                            
+                        }
+                            if updatetime {
+                                var corr = 0;if pm {corr = 12}
+                                self.label.text = String("0" + String(Int(hour) + corr)).suffix(2) + ":" + String("0" + String(dateTimeComponents.minute ?? 0)).suffix(2);updatetime = false}
+                            } else {valuetoreturn = false}}}
+        } else {return false}
+        valuetoreturn = true
+        return (valuetoreturn ?? false)
+    }
+    
+    
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        print("touch",engineready)
+        if !engineready {return}
+            activehands = true
+        if !alertpermitted || alarmset {return}
+        print("touch")
+        if touches.first != nil {
+            if self.permitscreentouch {self.timer1()}
+        }}
+    
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        print("touchend")
+            activehands = false
+        if !alertpermitted || alarmset {return}
+        if atimer != nil{if atimer.isValid {atimer.invalidate()}}
+        if !self.permitscreentouch {
+            DispatchQueue.main.async{self.waitend = true}
+        //    self.timer2()
+            
+        }
+        //DispatchQueue.main.asyncAfter(deadline: .now() + 3) {}
+    }
+    
+    func timer1(){
+        print("settingtimer")
+        atimer = Timer.scheduledTimer(timeInterval: TimeInterval(1.5), target: self, selector: #selector(start), userInfo: nil, repeats: false)
+    }
+    
+    
+    @objc func start(){
+        let generator = UISelectionFeedbackGenerator();generator.selectionChanged();
+        intensityforalarm = 0.2
+        hourtoalarm = Int(inclination)
+        var hourpre = 0
+        if Float(hourtoalarm) + Float(minutetoalarm)/60 < hour {
+            switch pm {
+            case false:
+                hourpre = hourtoalarm
+            default:
+                hourpre = hourtoalarm + 12
+            }
+        } else {
+            switch pm {
+            case false:
+                hourpre = hourtoalarm + 12
+            default:
+                hourpre = hourtoalarm
+            }
+        }
+        let hourcomponent = String("0" + String(hourpre)).suffix(2)
+         self.labelalarm.text = "\(hourcomponent):??"
+        screentouched = true
+        permitscreentouch = false
+        }
+    
+   func end(){
+        screentouched = false
+        permitscreentouch = true
+                let generator = UIImpactFeedbackGenerator();generator.impactOccurred();
+        do{try player?.stop(atTime: CHHapticTimeImmediate);vibrating = false;
+            } catch let error {
+                print("Error stopping the continuous haptic player: \(error)")
+            }
+        }
+    
+    
+    
+    func setalarm() {
+        if  exitalarmsetting {
+            labelalarm.text = ""
+            return}
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests();center.removeAllDeliveredNotifications()
+        center.getNotificationSettings { settings in
+            guard (settings.authorizationStatus == .authorized) ||
+                  (settings.authorizationStatus == .provisional) else { return }
+            if settings.soundSetting == .enabled {
+                let content = UNMutableNotificationContent()
+                content.title = "HapticTime Alarm"
+                content.categoryIdentifier = "alarm"
+                content.userInfo = ["customData": "fizzbuzz"]
+                content.sound = .default
+                var dateaComponents = DateComponents()
+                
+                dateaComponents.minute =  minutetoalarm
+                if Float(hourtoalarm) + Float(minutetoalarm)/60 < hour {
+                    switch pm {
+                    case false:
+                        dateaComponents.hour = hourtoalarm
+                    default:
+                        dateaComponents.hour = hourtoalarm + 12
+                    }
+                } else {
+                    switch pm {
+                    case false:
+                        dateaComponents.hour = hourtoalarm + 12
+                    default:
+                        dateaComponents.hour = hourtoalarm
+                    }
+                }
+                let trigger = UNCalendarNotificationTrigger(dateMatching: dateaComponents, repeats: false)
+                let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+                DispatchQueue.main.async{center.add(request)
+                alarmset = true
+                    let hourcomponent = String("0" + String(dateaComponents.hour ?? 0)).suffix(2)
+                let minutecomponent = String("0" + String(minutetoalarm)).suffix(2)
+                    print("alarmset",dateaComponents.hour,dateaComponents.minute)
+                let stringofalarm = String("\(hourcomponent):\(minutecomponent)");
+                self.labelalarm.text = stringofalarm}
+            }}
+        
+    }
+    
+    
+    
+    func vibradepthrt(vibr: Float) {
+        let luminosity = vibr
+        let sha = vibr
+        switch vibrating {
+        case true:
+            let intensityvar = Float(vibr/contintensity.value)
+            let sharpnessvar = vibr - contsharpness.value
+            let intensityParameter = CHHapticDynamicParameter(parameterID: .hapticIntensityControl,
+                                                              value: intensityvar,
+                                                              relativeTime: 0)
+
+            let sharpnessParameter = CHHapticDynamicParameter(parameterID: .hapticSharpnessControl,
+                                                              value: sharpnessvar,
+                                                              relativeTime: 0)
+
+            
+            do {
+                try player?.sendParameters([intensityParameter, sharpnessParameter],
+                                                    atTime: 0)
+            } catch let error {
+                print("Dynamic Parameter Error: \(error)")
+            };
+            previbr=(vibr + previbr*10)/11
+        default:
+                    contintensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: luminosity)
+                    contsharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: sha)
+        do {
+            let event = CHHapticEvent(eventType: .hapticContinuous, parameters: [contintensity, contsharpness], relativeTime:0, duration: 20)
+            let pattern = try CHHapticPattern(events: [event], parameters: [])
+            player = try engine?.makeAdvancedPlayer(with: pattern)
+            try player?.start(atTime: 0)
+            vibrating = true;
+            previbr=(vibr + previbr*10)/11
+            } catch {
+            print("Failed to play pattern: \(error.localizedDescription).")
+            }
+    }
+    }
+    
+    
+}
+extension UIImage {
+    func rotate(radians: Float) -> UIImage? {
+        //var newSize = CGRect(origin: CGPoint.zero, size: self.size).applying(CGAffineTransform(rotationAngle: CGFloat(radians))).size
+        // Trim off the extremely small float value to prevent core graphics from rounding it up
+
+        UIGraphicsBeginImageContextWithOptions(newSize, false, self.scale)
+        let context = UIGraphicsGetCurrentContext()!
+
+        // Move origin to middle
+        context.translateBy(x: newSize.width/2, y: newSize.height/2)
+        // Rotate around middle
+        context.rotate(by: CGFloat(radians))
+        // Draw the image at its center
+        self.draw(in: CGRect(x: -self.size.width/2, y: -self.size.height/2, width: self.size.width, height: self.size.height))
+
+        let newImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+
+        return newImage
+    }
+}
+
